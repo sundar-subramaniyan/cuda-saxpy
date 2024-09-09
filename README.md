@@ -1,16 +1,25 @@
 This is a basic CUDA example that does Single-precision A*X Plus Y (SAXPY) computation on the Nvidia GPU.
 
-Reference:
+**Reference:**
+```
   https://developer.nvidia.com/blog/easy-introduction-cuda-c-and-c
+```
 
 **Build:**
 ```
 $ make
+CC saxpy.cu
+LD saxpy.o
+EXEC saxpy
+DOXYGEN HTML
 ```
 
  **Clean:**
  ```
 $ make clean
+CLEAN saxpy.o
+CLEAN saxpy
+CLEAN html
  ```
 
 **Run:**
@@ -18,6 +27,7 @@ $ make clean
 $ saxpy --help
 Usage: saxpy [--no-cuda-memcpy] [--no-host-map] [--vector-size <size>]
 ```
+
 **Example:**
 ```
 $ saxpy 
