@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <getopt.h>
+#include <time.h>
 
 /**
  * @brief Default size of the vectors
@@ -17,13 +18,18 @@
 #define TEST_VECTOR_SIZE (1 << 30)
 
 /**
+ * @brief Nanoseconds per second
+ */
+#define NS_PER_SECOND 1000000000UL
+
+/**
  * @brief The kernel function that performs the parallel compute operation
  *	  in the GPU
  *
- * @param[in] n Vector size
- * @param[in] a Number to multiply with the vector x
- * @param[in] x Pointer to the device memory holding x vector
- * @param[in, out] y Pointer to the device memory holding y vector
+ * @param[in]		n Vector size
+ * @param[in]		a Number to multiply with the vector x
+ * @param[in]		x Pointer to the device memory holding x vector
+ * @param[in, out]	y Pointer to the device memory holding y vector
  */
 __global__
 void saxpy(int n, float a, float *x, float *y)
@@ -32,6 +38,27 @@ void saxpy(int n, float a, float *x, float *y)
 
 	if (i < n)
 		y[i] = a * x[i] + y[i];
+}
+
+/**
+ * @brief Calculate the time delta
+ *
+ * @param[in]	t1 Start time
+ * @param[in]	t2 Finish time
+ * @param[out]	td Delta time
+ */
+void timespec_delta(struct timespec *t1, struct timespec *t2, struct timespec *td)
+{
+	td->tv_nsec = t2->tv_nsec - t1->tv_nsec;
+	td->tv_sec = t2->tv_sec - t1->tv_sec;
+
+	if (td->tv_sec > 0 && td->tv_nsec < 0) {
+		td->tv_nsec += NS_PER_SECOND;
+		td->tv_sec--;
+	} else if (td->tv_sec < 0 && td->tv_nsec > 0) {
+		td->tv_nsec -= NS_PER_SECOND;
+		td->tv_sec++;
+	}
 }
 
 /**
@@ -52,11 +79,15 @@ int main(int argc, char *argv[])
 	int i, ret = 0, N = TEST_VECTOR_SIZE;
 	int cuda_memcpy_enabled = true;
 	int host_map_enabled = true;
+	int profiling_enabled = true;
 	int c, option_index = 0;
 	unsigned int deviceFlags, hostFlags;
 	float *x, *y, *d_x, *d_y, *r;
 	float maxError = 0.0f;
 	cudaError_t err;
+	struct timespec setup_start, setup_finish, setup_delta;
+	struct timespec comp_start, comp_finish, comp_delta;
+	struct timespec verify_start, verify_finish, verify_delta;
 
 	/* Parse the command line arguments */
 	while (1) {
@@ -64,6 +95,7 @@ int main(int argc, char *argv[])
 			/* Options that set a flag */
 			{ "no-cuda-memcpy", no_argument, &cuda_memcpy_enabled, 0 },
 			{ "no-host-map", no_argument, &host_map_enabled, 0 },
+			{ "no-profiling", no_argument, &profiling_enabled, 0 },
 
 			/* Options that don't set a flag */
 			{ "vector-size", required_argument, 0, 's' },
@@ -89,7 +121,8 @@ int main(int argc, char *argv[])
 		case 'h':
 			/* fallthrough */
 		default:
-			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "\
+			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "	\
+					"[--no-profiling] "			\
 					"[--vector-size <size>]\n", argv[0]);
 			exit(0);
 			break;
@@ -123,12 +156,18 @@ int main(int argc, char *argv[])
 
 	/* Show the compute options */
 	printf("Compute options:\n");
-	printf("\tUsing CUDA Memcpy\t\t\t\t[%s]\n",
-			cuda_memcpy_enabled ? "Yes" : " No");
-	printf("\tUsing Host Map\t\t\t\t\t[%s]\n",
+	printf("\tCUDA Memcpy\t\t\t\t\t[%s]\n",
+			cuda_memcpy_enabled ? " Enabled" : "Disabled");
+	printf("\tHost Map\t\t\t\t\t[%s]\n",
 			((deviceFlags & cudaDeviceMapHost)
-			 && host_map_enabled) ? "Yes" : " No");
-	printf("\tUsing Vector Size\t\t\t\t[%d]\n\n", N);
+			 && host_map_enabled) ? " Enabled" : "Disabled");
+	printf("\tProfiling Enabled\t\t\t\t[%s]\n",
+			profiling_enabled ? " Enabled" : "Disabled");
+	printf("\tVector Size\t\t\t\t\t[%d]\n\n", N);
+
+	/* 8< Profile begins [Setup] */
+	if (profiling_enabled)
+		clock_gettime(CLOCK_REALTIME, &setup_start);
 
 	/* Setup Host allocation flags */
 	hostFlags = cudaHostAllocDefault;
@@ -185,6 +224,16 @@ int main(int argc, char *argv[])
 		y[i] = 2.0f;
 	}
 
+	/* Profiling ends [Setup] >8 */
+	if (profiling_enabled) {
+		clock_gettime(CLOCK_REALTIME, &setup_finish);
+		timespec_delta(&setup_start, &setup_finish, &setup_delta);
+	}
+
+	/* 8< Profile begins [Compute] */
+	if (profiling_enabled)
+		clock_gettime(CLOCK_REALTIME, &comp_start);
+
 	if (cuda_memcpy_enabled) {
 		/* Move x from Host to Device memory */
 		err = cudaMemcpy(d_x, x, N * sizeof(float), cudaMemcpyHostToDevice);
@@ -235,11 +284,37 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* Profiling ends [Compute] >8 */
+	if (profiling_enabled) {
+		clock_gettime(CLOCK_REALTIME, &comp_finish);
+		timespec_delta(&comp_start, &comp_finish, &comp_delta);
+	}
+
+	/* 8< Profile begins [Verification] */
+	if (profiling_enabled)
+		clock_gettime(CLOCK_REALTIME, &verify_start);
+
 	/* Calculate errors and display the result */
 	for (i = 0; i < N; i++)
 		maxError = max(maxError, abs(r[i] - 4.0f));
 
-	printf("Compute complete. Max error: %f\n", maxError);
+	/* Profiling ends [Verification] >8 */
+	if (profiling_enabled) {
+		clock_gettime(CLOCK_REALTIME, &verify_finish);
+		timespec_delta(&verify_start, &verify_finish, &verify_delta);
+	}
+
+	printf("Compute summary:\n\tMax error:\t\t\t\t\t[%f]\n", maxError);
+
+	if (profiling_enabled) {
+		printf("\nProfiling results:\n");
+		printf("\tSetup time:\t\t\t\t\t[%d.%.9ld seconds]\n",
+				(int)setup_delta.tv_sec, setup_delta.tv_nsec);
+		printf("\tCompute time:\t\t\t\t\t[%d.%.9ld seconds]\n",
+				(int)comp_delta.tv_sec, comp_delta.tv_nsec);
+		printf("\tVerification time:\t\t\t\t[%d.%.9ld seconds]\n",
+				(int)verify_delta.tv_sec, verify_delta.tv_nsec);
+	}
 
 err_sync:
 err_copy:
