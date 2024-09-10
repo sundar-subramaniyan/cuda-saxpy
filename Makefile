@@ -12,6 +12,8 @@ endif
 
 ifneq (, $(shell which doxygen))
 	DOXYGEN_INSTALLED := true
+else
+	DOXYGEN_INSTALLED := false
 endif
 
 all: nvcc_check $(EXEC) $(DOXYGEN_DIR)
