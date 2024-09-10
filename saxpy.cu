@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
 	int host_map_enabled = true;
 	int profiling_enabled = true;
 	int c, option_index = 0;
-	unsigned int deviceFlags, hostFlags;
+	unsigned int dev_flags, host_flags;
 	float *x, *y, *d_x, *d_y, *r;
 	float maxError = 0.0f;
 	cudaError_t err;
@@ -130,7 +130,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Get the CUDA Device flags */
-	err = cudaGetDeviceFlags(&deviceFlags);
+	err = cudaGetDeviceFlags(&dev_flags);
 	if (err != cudaSuccess) {
 		printf("Failed to get CUDA device flags: %s/n", cudaGetErrorString(err));
 		ret = -1;
@@ -138,20 +138,20 @@ int main(int argc, char *argv[])
 	}
 
 	/* Interrogate the Device flags and summarize the available support */
-	deviceFlags &= cudaDeviceMask;
+	dev_flags &= cudaDeviceMask;
 	printf("CUDA Device Support Summary:\n");
 	printf("\tMapped pinned allocations\t\t\t[%s]\n",
-			(deviceFlags & cudaDeviceMapHost) ? "Yes" : " No");
+			(dev_flags & cudaDeviceMapHost) ? "Yes" : " No");
 	printf("\tAutomatic Scheduling\t\t\t\t[%s]\n",
-			(deviceFlags & cudaDeviceScheduleAuto) ? "Yes" : " No");
+			(dev_flags & cudaDeviceScheduleAuto) ? "Yes" : " No");
 	printf("\tUse blocking synchronization\t\t\t[%s]\n",
-			(deviceFlags & cudaDeviceScheduleBlockingSync) ? "Yes" : " No");
+			(dev_flags & cudaDeviceScheduleBlockingSync) ? "Yes" : " No");
 	printf("\tSpin default scheduling\t\t\t\t[%s]\n",
-			(deviceFlags & cudaDeviceScheduleSpin) ? "Yes" : " No");
+			(dev_flags & cudaDeviceScheduleSpin) ? "Yes" : " No");
 	printf("\tYield default scheduling\t\t\t[%s]\n",
-			(deviceFlags & cudaDeviceScheduleYield) ? "Yes" : " No");
+			(dev_flags & cudaDeviceScheduleYield) ? "Yes" : " No");
 	printf("\tKeep local memory allocation after launch\t[%s]\n",
-			(deviceFlags & cudaDeviceLmemResizeToMax) ? "Yes" : " No");
+			(dev_flags & cudaDeviceLmemResizeToMax) ? "Yes" : " No");
 	printf("\n");
 
 	/* Show the compute options */
@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
 	printf("\tCUDA Memcpy\t\t\t\t\t[%s]\n",
 			cuda_memcpy_enabled ? " Enabled" : "Disabled");
 	printf("\tHost Map\t\t\t\t\t[%s]\n",
-			((deviceFlags & cudaDeviceMapHost)
+			((dev_flags & cudaDeviceMapHost)
 			 && host_map_enabled) ? " Enabled" : "Disabled");
 	printf("\tProfiling Enabled\t\t\t\t[%s]\n",
 			profiling_enabled ? " Enabled" : "Disabled");
@@ -170,13 +170,13 @@ int main(int argc, char *argv[])
 		clock_gettime(CLOCK_REALTIME, &setup_start);
 
 	/* Setup Host allocation flags */
-	hostFlags = cudaHostAllocDefault;
-	if ((deviceFlags & cudaDeviceMapHost) && host_map_enabled) {
-		hostFlags |= (cudaHostAllocMapped | cudaHostAllocWriteCombined);
+	host_flags = cudaHostAllocDefault;
+	if ((dev_flags & cudaDeviceMapHost) && host_map_enabled) {
+		host_flags |= (cudaHostAllocMapped | cudaHostAllocWriteCombined);
 	}
 
 	/* Allocate x in Host memory */
-	err = cudaHostAlloc(&x, N * sizeof(float), hostFlags);
+	err = cudaHostAlloc(&x, N * sizeof(float), host_flags);
 	if (err != cudaSuccess) {
 		printf("Failed to allocate memory for x: %s\n", cudaGetErrorString(err));
 		ret = -1;
@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* Allocate y in Host memory */
-	err = cudaHostAlloc(&y, N * sizeof(float), hostFlags);
+	err = cudaHostAlloc(&y, N * sizeof(float), host_flags);
 	if (err != cudaSuccess) {
 		printf("Failed to allocate memory for y: %s\n", cudaGetErrorString(err));
 		ret = -1;
@@ -192,10 +192,10 @@ int main(int argc, char *argv[])
 	}
 
 	/* Allocate r in Host memory */
-	if ((deviceFlags & cudaDeviceMapHost) && host_map_enabled)
-		hostFlags &= ~cudaHostAllocWriteCombined;
+	if ((dev_flags & cudaDeviceMapHost) && host_map_enabled)
+		host_flags &= ~cudaHostAllocWriteCombined;
 
-	err = cudaHostAlloc(&r, N * sizeof(float), hostFlags);
+	err = cudaHostAlloc(&r, N * sizeof(float), host_flags);
 	if (err != cudaSuccess) {
 		printf("Failed to allocate memory for r: %s\n", cudaGetErrorString(err));
 		ret = -1;
