@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
 	int profiling_enabled = true;
 	int c, option_index = 0;
 	unsigned int dev_flags, host_flags;
-	float *x, *y, *d_x, *d_y, *r;
+	float *x, *y, *r, *d_x = NULL, *d_y = NULL;
 	float maxError = 0.0f;
 	cudaError_t err;
 	struct timespec setup_start, setup_finish, setup_delta;
@@ -202,20 +202,23 @@ int main(int argc, char *argv[])
 		goto err_alloc_r;
 	}
 
-	/* Allocate x in Device memory */
-	err = cudaMalloc(&d_x, N * sizeof(float));
-	if (err != cudaSuccess) {
-		printf("Failed to CUDA Malloc for d_x: %s\n", cudaGetErrorString(err));
-		ret = -1;
-		goto err_alloc_d_x;
-	}
+	/* Allocate Device memory if CUDA memcpy is enabled */
+	if (cuda_memcpy_enabled) {
+		/* Allocate x in Device memory */
+		err = cudaMalloc(&d_x, N * sizeof(float));
+		if (err != cudaSuccess) {
+			printf("Failed to CUDA Malloc for d_x: %s\n", cudaGetErrorString(err));
+			ret = -1;
+			goto err_alloc_d_x;
+		}
 
-	/* Allocate y in Device memory */
-	err = cudaMalloc(&d_y, N * sizeof(float));
-	if (err != cudaSuccess) {
-		printf("Failed to CUDA Malloc for d_y: %s\n", cudaGetErrorString(err));
-		ret = -1;
-		goto err_alloc_d_y;
+		/* Allocate y in Device memory */
+		err = cudaMalloc(&d_y, N * sizeof(float));
+		if (err != cudaSuccess) {
+			printf("Failed to CUDA Malloc for d_y: %s\n", cudaGetErrorString(err));
+			ret = -1;
+			goto err_alloc_d_y;
+		}
 	}
 
 	/* Initialize the array in Host */
@@ -318,10 +321,12 @@ int main(int argc, char *argv[])
 
 err_sync:
 err_copy:
-	cudaFree(d_y);
+	if (d_y)
+		cudaFree(d_y);
 
 err_alloc_d_y:
-	cudaFree(d_x);
+	if (d_x)
+		cudaFree(d_x);
 
 err_alloc_d_x:
 	cudaFreeHost(r);
