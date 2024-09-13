@@ -31,6 +31,7 @@
  * @param PROF_TASK_HOST_MEMCPY		Host memcpy time
  * @param PROF_TASK_HOST_INIT		Host Vector initialisation time
  * @param PROF_TASK_HOST_VERIFY		Host verification time
+ * @param PROF_TASK_HOST_COMPUTE	Host compute time
  * @param PROF_TASK_DEVICE_ALLOC	Device memory allocation time
  * @param PROF_TASK_DEVICE_FREE		Device memory free time
  * @param PROF_TASK_DEVICE_MEMCPY	Device memcpy time
@@ -44,6 +45,7 @@ enum profile_task_type {
 	PROF_TASK_HOST_MEMCPY,
 	PROF_TASK_HOST_INIT,
 	PROF_TASK_HOST_VERIFY,
+	PROF_TASK_HOST_COMPUTE,
 	PROF_TASK_DEVICE_ALLOC,
 	PROF_TASK_DEVICE_FREE,
 	PROF_TASK_DEVICE_MEMCPY,
@@ -93,6 +95,10 @@ static struct profile_ctx prof_ctx_grp[PROF_TASK_MAX_TYPES] = {
 	{
 		.title = "Host Verify",
 		.type = PROF_TASK_HOST_VERIFY,
+	},
+	{
+		.title = "Host Compute",
+		.type = PROF_TASK_HOST_COMPUTE,
 	},
 	{
 		.title = "Device Alloc",
@@ -256,6 +262,24 @@ void saxpy(int n, float a, float *x, float *y)
 }
 
 /**
+ * @brief The kernel function that performs the parallel compute operation
+ *	  in the Host CPU
+ *
+ * @param[in]		n Vector size
+ * @param[in]		a Number to multiply with the vector x
+ * @param[in]		x Pointer to the Host memory holding x vector
+ * @param[in, out]	y Pointer to the Host memory holding y vector
+ */
+void saxpy_host(int n, float a, float *x, float *y)
+{
+	int i;
+
+	for (i = 0; i < n; i++) {
+		y[i] += a * x[i];
+	}
+}
+
+/**
  * @brief The main function that allocates the vectors in the Host memory
  *	  and initializes them with constant values.
  *
@@ -274,6 +298,7 @@ int main(int argc, char *argv[])
 	int cuda_memcpy_enabled = true;
 	int host_map_enabled = true;
 	int profiling_enabled = true;
+	int host_compute_mode = false;
 	int c, option_index = 0;
 	unsigned int dev_flags, host_flags;
 	float *x, *y, *r, *d_x = NULL, *d_y = NULL, *p_x, *p_y;
@@ -287,6 +312,7 @@ int main(int argc, char *argv[])
 			{ "no-cuda-memcpy", no_argument, &cuda_memcpy_enabled, 0 },
 			{ "no-host-map", no_argument, &host_map_enabled, 0 },
 			{ "no-profiling", no_argument, &profiling_enabled, 0 },
+			{ "host-compute-mode", no_argument, &host_compute_mode, 1 },
 
 			/* Options that don't set a flag */
 			{ "vector-size", required_argument, 0, 's' },
@@ -312,12 +338,17 @@ int main(int argc, char *argv[])
 		case 'h':
 			/* fallthrough */
 		default:
-			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "	\
-					"[--no-profiling] "			\
+			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "		\
+					"[--no-profiling] [--host-compute-mode] "	\
 					"[--vector-size <size>]\n", argv[0]);
 			exit(0);
 			break;
 		}
+	}
+
+	if (host_compute_mode) {
+		cuda_memcpy_enabled = false;
+		host_map_enabled = false;
 	}
 
 	/* 8< Profile Setup time */
@@ -360,6 +391,8 @@ int main(int argc, char *argv[])
 			 && host_map_enabled) ? " Enabled" : "Disabled");
 	printf("\tProfiling Enabled\t\t\t\t[%s]\n",
 			profiling_enabled ? " Enabled" : "Disabled");
+	printf("\tHost Compute Mode\t\t\t\t[%s]\n",
+			host_compute_mode ? " Enabled" : "Disabled");
 	printf("\tVector Size\t\t\t\t\t[%d]\n\n", N);
 
 	/* Setup Host allocation flags */
@@ -468,22 +501,32 @@ int main(int argc, char *argv[])
 		p_y = y;
 	}
 
-	/* 8< Profile Device Compute time */
-	profile_record_start(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
+	if (!host_compute_mode) {
+		/* 8< Profile Device Compute time */
+		profile_record_start(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
 
-	/* Perform SAXPY on the vectors present in the respective memory */
-	saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, p_x, p_y);
+		/* Perform SAXPY on the vectors present in the respective memory */
+		saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, p_x, p_y);
 
-	/* Wait for the Device to finish */
-	err = cudaDeviceSynchronize();
-	if (err != cudaSuccess) {
-		printf("Failed to synchronize: %s\n", cudaGetErrorString(err));
-		ret = -1;
-		goto err_sync;
+		/* Wait for the Device to finish */
+		err = cudaDeviceSynchronize();
+		if (err != cudaSuccess) {
+			printf("Failed to synchronize: %s\n", cudaGetErrorString(err));
+			ret = -1;
+			goto err_sync;
+		}
+
+		/* Profile Device Compute time >8 */
+		profile_record_stop(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
+	} else {
+		/* 8< Profile Host Compute time */
+		profile_record_start(PROF_TASK_HOST_COMPUTE, profiling_enabled);
+
+		saxpy_host(N, 2.0f, p_x, p_y);
+
+		/* Profile Host Compute time >8 */
+		profile_record_stop(PROF_TASK_HOST_COMPUTE, profiling_enabled);
 	}
-
-	/* Profile Device Compute time >8 */
-	profile_record_stop(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
 
 	if (cuda_memcpy_enabled) {
 		/* Copy results from Device to Host memory */
