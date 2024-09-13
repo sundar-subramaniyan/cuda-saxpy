@@ -23,6 +23,221 @@
 #define NS_PER_SECOND 1000000000UL
 
 /**
+ * @brief Profile Task type
+ *
+ * @param PROF_TASK_SETUP		Setup time
+ * @param PROF_TASK_HOST_ALLOC		Host memory allocation time
+ * @param PROF_TASK_HOST_FREE		Host memory free time
+ * @param PROF_TASK_HOST_MEMCPY		Host memcpy time
+ * @param PROF_TASK_HOST_INIT		Host Vector initialisation time
+ * @param PROF_TASK_HOST_VERIFY		Host verification time
+ * @param PROF_TASK_DEVICE_ALLOC	Device memory allocation time
+ * @param PROF_TASK_DEVICE_FREE		Device memory free time
+ * @param PROF_TASK_DEVICE_MEMCPY	Device memcpy time
+ * @param PROF_TASK_DEVICE_COMPUTE	Device compute time
+ * @param PROF_TASK_MAX_TYPES		Maximum number of Task types
+ */
+enum profile_task_type {
+	PROF_TASK_SETUP,
+	PROF_TASK_HOST_ALLOC,
+	PROF_TASK_HOST_FREE,
+	PROF_TASK_HOST_MEMCPY,
+	PROF_TASK_HOST_INIT,
+	PROF_TASK_HOST_VERIFY,
+	PROF_TASK_DEVICE_ALLOC,
+	PROF_TASK_DEVICE_FREE,
+	PROF_TASK_DEVICE_MEMCPY,
+	PROF_TASK_DEVICE_COMPUTE,
+	PROF_TASK_MAX_TYPES,
+};
+
+/**
+ * @brief Profile context
+ *
+ */
+struct profile_ctx {
+	const char *title;		/**< Title of the task being profiled */
+	enum profile_task_type type;	/**< Task type being profiled */
+	struct timespec start;		/**< Profiling start time */
+	struct timespec finish;		/**< Profiling finish time */
+	struct timespec delta;		/**< Profiling delta time */
+};
+
+/**
+ * @brief Instance of the profile context group
+ *
+ * Each index in the array points to a specific
+ * task being profiled.
+ */
+static struct profile_ctx prof_ctx_grp[PROF_TASK_MAX_TYPES] = {
+	{
+		.title = "Host Setup",
+		.type = PROF_TASK_SETUP,
+	},
+	{
+		.title = "Host Alloc",
+		.type = PROF_TASK_HOST_ALLOC,
+	},
+	{
+		.title = "Host Free",
+		.type = PROF_TASK_HOST_FREE,
+	},
+	{
+		.title = "Host Memcpy",
+		.type = PROF_TASK_HOST_MEMCPY,
+	},
+	{
+		.title = "Host Init",
+		.type = PROF_TASK_HOST_INIT,
+	},
+	{
+		.title = "Host Verify",
+		.type = PROF_TASK_HOST_VERIFY,
+	},
+	{
+		.title = "Device Alloc",
+		.type = PROF_TASK_DEVICE_ALLOC,
+	},
+	{
+		.title = "Device Free",
+		.type = PROF_TASK_DEVICE_FREE,
+	},
+	{
+		.title = "Device Memcpy",
+		.type = PROF_TASK_DEVICE_FREE,
+	},
+	{
+		.title = "Device Compute",
+		.type = PROF_TASK_DEVICE_COMPUTE,
+	},
+};
+
+/**
+ * @brief Start the profiling
+ *
+ * @param[in]	type		Type of task to profile
+ * @param[in]	prof_enable	Boolean that indicates whether profiling is enabled
+ */
+static inline void
+profile_record_start(enum profile_task_type type, int prof_enable)
+{
+	struct profile_ctx *ctx;
+
+	if (!prof_enable)
+		return;
+
+	if (type >= PROF_TASK_MAX_TYPES) {
+		printf("PROF START: Invalid profile task type %d\n", type);
+		return;
+	}
+
+	ctx = &prof_ctx_grp[type];
+	clock_gettime(CLOCK_REALTIME, &ctx->start);
+}
+
+/**
+ * @brief Stop the profiling
+ *
+ * @param[in]	type		Type of task to profile
+ * @param[in]	prof_enable	Boolean that indicates whether profiling is enabled
+ */
+static inline void
+profile_record_stop(enum profile_task_type type, int prof_enable)
+{
+	struct profile_ctx *ctx;
+
+	if (!prof_enable)
+		return;
+
+	if (type >= PROF_TASK_MAX_TYPES) {
+		printf("PROF STOP: Invalid profile task type %d\n", type);
+		return;
+	}
+
+	ctx = &prof_ctx_grp[type];
+	clock_gettime(CLOCK_REALTIME, &ctx->finish);
+}
+
+/**
+ * @brief Calculate the delta and record it
+ *
+ * @param[in]	ctx	Pointer to profile context
+ */
+static inline void
+profile_record_calc_delta(struct profile_ctx *ctx)
+{
+	struct timespec *t1, *t2, *td;
+
+	t1 = &ctx->start;
+	t2 = &ctx->finish;
+	td = &ctx->delta;
+
+	td->tv_nsec = t2->tv_nsec - t1->tv_nsec;
+	td->tv_sec = t2->tv_sec - t1->tv_sec;
+
+	if (td->tv_sec > 0 && td->tv_nsec < 0) {
+		td->tv_nsec += NS_PER_SECOND;
+		td->tv_sec--;
+	} else if (td->tv_sec < 0 && td->tv_nsec > 0) {
+		td->tv_nsec -= NS_PER_SECOND;
+		td->tv_sec++;
+	}
+}
+
+/**
+ * @brief Calculate the delta for all the profile task types
+ *
+ * @param[in]	prof_enable	Boolean that indicates whether profiling is enabled
+ */
+static inline void
+profile_record_calc_delta_all(int prof_enable)
+{
+	int i;
+
+	if (!prof_enable)
+		return;
+
+	for (i = 0; i < sizeof(prof_ctx_grp)/sizeof(prof_ctx_grp[0]); i++) {
+		profile_record_calc_delta(&prof_ctx_grp[i]);
+	}
+}
+
+/**
+ * @brief Print summary of profiling for a given task type
+ *
+ * @param[in]	ctx	Pointer to profile context
+ */
+static inline void
+profile_record_summarize(struct profile_ctx *ctx)
+{
+	if (!ctx->delta.tv_sec && !ctx->delta.tv_nsec)
+		return;
+
+	printf("\t%s time:\t\t\t\t\t\t[%d.%.9ld seconds]\n",
+			ctx->title,
+			(int)ctx->delta.tv_sec,
+			ctx->delta.tv_nsec);
+}
+
+/**
+ * @brief Print summary all the profiling task types
+ *
+ * @param[in]	prof_enable	Boolean that indicates whether profiling is enabled
+ */
+static inline void
+profile_record_summarize_all(int prof_enable)
+{
+	int i;
+
+	if (!prof_enable)
+		return;
+
+	for (i = 0; i < sizeof(prof_ctx_grp)/sizeof(prof_ctx_grp[0]); i++) {
+		profile_record_summarize(&prof_ctx_grp[i]);
+	}
+}
+
+/**
  * @brief The kernel function that performs the parallel compute operation
  *	  in the GPU
  *
@@ -38,27 +253,6 @@ void saxpy(int n, float a, float *x, float *y)
 
 	if (i < n)
 		y[i] = a * x[i] + y[i];
-}
-
-/**
- * @brief Calculate the time delta
- *
- * @param[in]	t1 Start time
- * @param[in]	t2 Finish time
- * @param[out]	td Delta time
- */
-void timespec_delta(struct timespec *t1, struct timespec *t2, struct timespec *td)
-{
-	td->tv_nsec = t2->tv_nsec - t1->tv_nsec;
-	td->tv_sec = t2->tv_sec - t1->tv_sec;
-
-	if (td->tv_sec > 0 && td->tv_nsec < 0) {
-		td->tv_nsec += NS_PER_SECOND;
-		td->tv_sec--;
-	} else if (td->tv_sec < 0 && td->tv_nsec > 0) {
-		td->tv_nsec -= NS_PER_SECOND;
-		td->tv_sec++;
-	}
 }
 
 /**
@@ -82,12 +276,9 @@ int main(int argc, char *argv[])
 	int profiling_enabled = true;
 	int c, option_index = 0;
 	unsigned int dev_flags, host_flags;
-	float *x, *y, *r, *d_x = NULL, *d_y = NULL;
+	float *x, *y, *r, *d_x = NULL, *d_y = NULL, *p_x, *p_y;
 	float maxError = 0.0f;
 	cudaError_t err;
-	struct timespec setup_start, setup_finish, setup_delta;
-	struct timespec comp_start, comp_finish, comp_delta;
-	struct timespec verify_start, verify_finish, verify_delta;
 
 	/* Parse the command line arguments */
 	while (1) {
@@ -129,6 +320,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* 8< Profile Setup time */
+	profile_record_start(PROF_TASK_SETUP, profiling_enabled);
+
 	/* Get the CUDA Device flags */
 	err = cudaGetDeviceFlags(&dev_flags);
 	if (err != cudaSuccess) {
@@ -136,6 +330,9 @@ int main(int argc, char *argv[])
 		ret = -1;
 		goto err_flags;
 	}
+
+	/* Profile Setup time >8 */
+	profile_record_stop(PROF_TASK_SETUP, profiling_enabled);
 
 	/* Interrogate the Device flags and summarize the available support */
 	dev_flags &= cudaDeviceMask;
@@ -165,15 +362,14 @@ int main(int argc, char *argv[])
 			profiling_enabled ? " Enabled" : "Disabled");
 	printf("\tVector Size\t\t\t\t\t[%d]\n\n", N);
 
-	/* 8< Profile begins [Setup] */
-	if (profiling_enabled)
-		clock_gettime(CLOCK_REALTIME, &setup_start);
-
 	/* Setup Host allocation flags */
 	host_flags = cudaHostAllocDefault;
 	if ((dev_flags & cudaDeviceMapHost) && host_map_enabled) {
 		host_flags |= (cudaHostAllocMapped | cudaHostAllocWriteCombined);
 	}
+
+	/* 8< Profile Host allocation time */
+	profile_record_start(PROF_TASK_HOST_ALLOC, profiling_enabled);
 
 	/* Allocate x in Host memory */
 	err = cudaHostAlloc(&x, N * sizeof(float), host_flags);
@@ -202,8 +398,14 @@ int main(int argc, char *argv[])
 		goto err_alloc_r;
 	}
 
+	/* Profile Host allocation time >8 */
+	profile_record_stop(PROF_TASK_HOST_ALLOC, profiling_enabled);
+
 	/* Allocate Device memory if CUDA memcpy is enabled */
 	if (cuda_memcpy_enabled) {
+		/* 8< Profile Device allocation time */
+		profile_record_start(PROF_TASK_DEVICE_ALLOC, profiling_enabled);
+
 		/* Allocate x in Device memory */
 		err = cudaMalloc(&d_x, N * sizeof(float));
 		if (err != cudaSuccess) {
@@ -219,7 +421,13 @@ int main(int argc, char *argv[])
 			ret = -1;
 			goto err_alloc_d_y;
 		}
+
+		/* Profile Device allocation time >8 */
+		profile_record_stop(PROF_TASK_DEVICE_ALLOC, profiling_enabled);
 	}
+
+	/* 8< Profile Host initialisation time */
+	profile_record_start(PROF_TASK_HOST_INIT, profiling_enabled);
 
 	/* Initialize the array in Host */
 	for (i = 0; i < N; i++) {
@@ -227,17 +435,13 @@ int main(int argc, char *argv[])
 		y[i] = 2.0f;
 	}
 
-	/* Profiling ends [Setup] >8 */
-	if (profiling_enabled) {
-		clock_gettime(CLOCK_REALTIME, &setup_finish);
-		timespec_delta(&setup_start, &setup_finish, &setup_delta);
-	}
-
-	/* 8< Profile begins [Compute] */
-	if (profiling_enabled)
-		clock_gettime(CLOCK_REALTIME, &comp_start);
+	/* Profile Host initialisation time >8 */
+	profile_record_stop(PROF_TASK_HOST_INIT, profiling_enabled);
 
 	if (cuda_memcpy_enabled) {
+		/* 8< Profile Device Memcpy time */
+		profile_record_start(PROF_TASK_DEVICE_MEMCPY, profiling_enabled);
+
 		/* Move x from Host to Device memory */
 		err = cudaMemcpy(d_x, x, N * sizeof(float), cudaMemcpyHostToDevice);
 		if (err != cudaSuccess) {
@@ -254,12 +458,21 @@ int main(int argc, char *argv[])
 			goto err_copy;
 		}
 
-		/* Perform SAXPY on the vectors copied to the Device memory */
-		saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, d_x, d_y);
+		/* Profile Device Memcpy time >8 */
+		profile_record_stop(PROF_TASK_DEVICE_MEMCPY, profiling_enabled);
+
+		p_x = d_x;
+		p_y = d_y;
 	} else {
-		/* Perform SAXPY on the vectors present in the Host memory */
-		saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, x, y);
+		p_x = x;
+		p_y = y;
 	}
+
+	/* 8< Profile Device Compute time */
+	profile_record_start(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
+
+	/* Perform SAXPY on the vectors present in the respective memory */
+	saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, p_x, p_y);
 
 	/* Wait for the Device to finish */
 	err = cudaDeviceSynchronize();
@@ -268,6 +481,9 @@ int main(int argc, char *argv[])
 		ret = -1;
 		goto err_sync;
 	}
+
+	/* Profile Device Compute time >8 */
+	profile_record_stop(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
 
 	if (cuda_memcpy_enabled) {
 		/* Copy results from Device to Host memory */
@@ -278,6 +494,9 @@ int main(int argc, char *argv[])
 			goto err_copy;
 		}
 	} else {
+		/* 8< Profile Host Memcpy time */
+		profile_record_start(PROF_TASK_HOST_MEMCPY, profiling_enabled);
+
 		/* Copy results from Host to Host memory */
 		err = cudaMemcpy(r, y, N * sizeof(float), cudaMemcpyHostToHost);
 		if (err != cudaSuccess) {
@@ -285,50 +504,44 @@ int main(int argc, char *argv[])
 			ret = -1;
 			goto err_copy;
 		}
+
+		/* 8< Profile Host Memcpy time */
+		profile_record_stop(PROF_TASK_HOST_MEMCPY, profiling_enabled);
 	}
 
-	/* Profiling ends [Compute] >8 */
-	if (profiling_enabled) {
-		clock_gettime(CLOCK_REALTIME, &comp_finish);
-		timespec_delta(&comp_start, &comp_finish, &comp_delta);
-	}
-
-	/* 8< Profile begins [Verification] */
-	if (profiling_enabled)
-		clock_gettime(CLOCK_REALTIME, &verify_start);
+	/* 8< Profile Host Verification time */
+	profile_record_start(PROF_TASK_HOST_VERIFY, profiling_enabled);
 
 	/* Calculate errors and display the result */
 	for (i = 0; i < N; i++)
 		maxError = max(maxError, abs(r[i] - 4.0f));
 
-	/* Profiling ends [Verification] >8 */
-	if (profiling_enabled) {
-		clock_gettime(CLOCK_REALTIME, &verify_finish);
-		timespec_delta(&verify_start, &verify_finish, &verify_delta);
-	}
+	/* Profile Host Verification time >8 */
+	profile_record_stop(PROF_TASK_HOST_VERIFY, profiling_enabled);
 
 	printf("Compute summary:\n\tMax error:\t\t\t\t\t[%f]\n", maxError);
 
-	if (profiling_enabled) {
-		printf("\nProfiling results:\n");
-		printf("\tSetup time:\t\t\t\t\t[%d.%.9ld seconds]\n",
-				(int)setup_delta.tv_sec, setup_delta.tv_nsec);
-		printf("\tCompute time:\t\t\t\t\t[%d.%.9ld seconds]\n",
-				(int)comp_delta.tv_sec, comp_delta.tv_nsec);
-		printf("\tVerification time:\t\t\t\t[%d.%.9ld seconds]\n",
-				(int)verify_delta.tv_sec, verify_delta.tv_nsec);
-	}
-
 err_sync:
 err_copy:
-	if (d_y)
+	if (d_y) {
+		/* 8< Profile Device Free time */
+		profile_record_start(PROF_TASK_DEVICE_FREE, profiling_enabled);
+
 		cudaFree(d_y);
+	}
 
 err_alloc_d_y:
-	if (d_x)
+	if (d_x) {
 		cudaFree(d_x);
 
+		/* 8< Profile Device Free time */
+		profile_record_stop(PROF_TASK_DEVICE_FREE, profiling_enabled);
+	}
+
 err_alloc_d_x:
+	/* 8< Profile Host Free time */
+	profile_record_start(PROF_TASK_HOST_FREE, profiling_enabled);
+
 	cudaFreeHost(r);
 
 err_alloc_r:
@@ -337,7 +550,16 @@ err_alloc_r:
 err_alloc_y:
 	cudaFreeHost(x);
 
+	/* 8< Profile Host Free time */
+	profile_record_stop(PROF_TASK_HOST_FREE, profiling_enabled);
+
 err_alloc_x:
 err_flags:
+	if (!ret && profiling_enabled) {
+		profile_record_calc_delta_all(profiling_enabled);
+		printf("\nProfiling results:\n");
+		profile_record_summarize_all(profiling_enabled);
+	}
+
 	return ret;
 }
