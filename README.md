@@ -25,7 +25,7 @@ CLEAN html
 **Run:**
 ```
 $ saxpy --help
-Usage: saxpy [--no-cuda-memcpy] [--no-host-map] [--no-profiling] [--vector-size <size>]
+Usage: saxpy [--no-cuda-memcpy] [--no-host-map] [--no-profiling] [--host-compute-mode] [--vector-size <size>]
 ```
 
 **Example:**
@@ -43,13 +43,20 @@ Compute options:
 	CUDA Memcpy					[ Enabled]
 	Host Map					[ Enabled]
 	Profiling Enabled				[ Enabled]
+	Host Compute Mode				[Disabled]
 	Vector Size					[1073741824]
 
 Compute summary:
 	Max error:					[0.000000]
 
 Profiling results:
-	Setup time:					[3.024503611 seconds]
-	Compute time:					[0.536040190 seconds]
-	Verification time:				[0.776172142 seconds]
+	Host Setup time:				[0.016320759 seconds]
+	Host Alloc time:				[3.983245582 seconds]
+	Host Free time:					[0.977180777 seconds]
+	Host Init time:					[0.696118777 seconds]
+	Host Verify time:				[0.770025566 seconds]
+	Device Alloc time:				[0.000242508 seconds]
+	Device Free time:				[0.003560735 seconds]
+	Device Memcpy time:				[0.359980237 seconds]
+	Device Compute time:				[0.013579677 seconds]
 ```
