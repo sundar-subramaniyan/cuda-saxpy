@@ -23,6 +23,22 @@
 #define NS_PER_SECOND 1000000000UL
 
 /**
+ * @brief Summary output buffer length (Per task summary)
+ */
+#define SUMMARY_BUF_LEN 128
+
+/**
+ * @brief Tab spaces
+ */
+#define TABSPACES 8
+
+/**
+ * @brief Number of Tabs to add to the summary
+ *	  before the time in seconds
+ */
+#define SUMMARY_NUM_TABS 7
+
+/**
  * @brief Profile Task type
  *
  * @param PROF_TASK_SETUP		Setup time
@@ -216,13 +232,26 @@ profile_record_calc_delta_all(int prof_enable)
 static inline void
 profile_record_summarize(struct profile_ctx *ctx)
 {
+	char buf[SUMMARY_BUF_LEN];
+	int len;
+	int tab_stops, tabs = SUMMARY_NUM_TABS;
+
 	if (!ctx->delta.tv_sec && !ctx->delta.tv_nsec)
 		return;
 
-	printf("\t%s time:\t\t\t\t\t\t[%d.%.9ld seconds]\n",
-			ctx->title,
+	len = snprintf(buf, sizeof(buf), "\t%s time:", ctx->title);
+	tab_stops = len/TABSPACES;
+
+	if (len % TABSPACES)
+		tab_stops++;
+
+	tabs -= tab_stops;
+	memset(buf + len, '\t', tabs);
+	len += tabs;
+	len = snprintf(buf + len, sizeof(buf) - len, "[%d.%.9ld seconds]\n",
 			(int)ctx->delta.tv_sec,
 			ctx->delta.tv_nsec);
+	fprintf(stdout, "%s", buf);
 }
 
 /**
