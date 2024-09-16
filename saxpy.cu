@@ -241,10 +241,7 @@ profile_record_summarize(struct profile_ctx *ctx)
 		return;
 
 	len = snprintf(buf, sizeof(buf), "\t%s time:", ctx->title);
-	tab_stops = len/TABSPACES;
-
-	if (len % TABSPACES)
-		tab_stops++;
+	tab_stops = (len + TABSPACES - 1)/TABSPACES;
 
 	tabs -= tab_stops;
 	memset(buf + len, '\t', tabs);
