@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <getopt.h>
 #include <time.h>
 
@@ -282,12 +283,12 @@ profile_record_summarize_all(int prof_enable)
  * @param[in, out]	y Pointer to the device memory holding y vector
  */
 __global__
-void saxpy(int n, float a, float *x, float *y)
+void saxpy(unsigned int n, float a, float *x, float *y)
 {
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if (i < n)
-		y[i] = a * x[i] + y[i];
+		y[i] = (a * x[i]) + y[i];
 }
 
 /**
@@ -299,12 +300,12 @@ void saxpy(int n, float a, float *x, float *y)
  * @param[in]		x Pointer to the Host memory holding x vector
  * @param[in, out]	y Pointer to the Host memory holding y vector
  */
-void saxpy_host(int n, float a, float *x, float *y)
+void saxpy_host(unsigned int n, float a, float *x, float *y)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < n; i++) {
-		y[i] += a * x[i];
+		y[i] += (a * x[i]);
 	}
 }
 
@@ -323,13 +324,15 @@ void saxpy_host(int n, float a, float *x, float *y)
  */
 int main(int argc, char *argv[])
 {
-	int i, ret = 0, N = TEST_VECTOR_SIZE;
+	int ret = 0;
+	unsigned int i, N = TEST_VECTOR_SIZE;
 	int cuda_memcpy_enabled = true;
 	int host_map_enabled = true;
 	int profiling_enabled = true;
 	int host_compute_mode = false;
 	int c, option_index = 0;
 	unsigned int dev_flags, host_flags;
+	float a_val = 2.0f, x_val = 1.0f, y_val = 2.0f, result;
 	float *x, *y, *r, *d_x = NULL, *d_y = NULL, *p_x, *p_y;
 	float maxError = 0.0f;
 	cudaError_t err;
@@ -344,11 +347,14 @@ int main(int argc, char *argv[])
 			{ "host-compute-mode", no_argument, &host_compute_mode, 1 },
 
 			/* Options that don't set a flag */
+			{ "a", required_argument, 0, 'a' },
+			{ "x", required_argument, 0, 'x' },
+			{ "y", required_argument, 0, 'y' },
 			{ "vector-size", required_argument, 0, 's' },
 			{ "help", no_argument, 0, 'h' },
 		};
 
-		c = getopt_long(argc, argv, "hs:", long_options, &option_index);
+		c = getopt_long(argc, argv, "axyhs:", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -361,15 +367,26 @@ int main(int argc, char *argv[])
 				printf(" with arg %s", optarg);
 			printf("\n");
 			break;
+		case 'a':
+			a_val = (float)atof(optarg);
+			break;
+		case 'x':
+			x_val = (float)atof(optarg);
+			break;
+		case 'y':
+			y_val = (float)atof(optarg);
+			break;
 		case 's':
-			N = atoi(optarg);
+			N = (unsigned int)strtoul(optarg, NULL, 10);
 			break;
 		case 'h':
 			/* fallthrough */
 		default:
 			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "		\
 					"[--no-profiling] [--host-compute-mode] "	\
-					"[--vector-size <size>]\n", argv[0]);
+					"[--a <value>] [--x <value>] " 	\
+					"[--y <value>] [--vector-size <size>]\n",
+					argv[0]);
 			exit(0);
 			break;
 		}
@@ -422,7 +439,10 @@ int main(int argc, char *argv[])
 			profiling_enabled ? " Enabled" : "Disabled");
 	printf("\tHost Compute Mode\t\t\t\t[%s]\n",
 			host_compute_mode ? " Enabled" : "Disabled");
-	printf("\tVector Size\t\t\t\t\t[%d]\n\n", N);
+	printf("\tA value\t\t\t\t\t\t[%g]\n", a_val);
+	printf("\tX value\t\t\t\t\t\t[%g]\n", x_val);
+	printf("\tY value\t\t\t\t\t\t[%g]\n", y_val);
+	printf("\tVector Size\t\t\t\t\t[%u]\n\n", N);
 
 	/* Setup Host allocation flags */
 	host_flags = cudaHostAllocDefault;
@@ -493,8 +513,8 @@ int main(int argc, char *argv[])
 
 	/* Initialize the array in Host */
 	for (i = 0; i < N; i++) {
-		x[i] = 1.0f;
-		y[i] = 2.0f;
+		x[i] = x_val;
+		y[i] = y_val;
 	}
 
 	/* Profile Host initialisation time >8 */
@@ -535,7 +555,7 @@ int main(int argc, char *argv[])
 		profile_record_start(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
 
 		/* Perform SAXPY on the vectors present in the respective memory */
-		saxpy<<<(N + 255)/256, 256>>>(N, 2.0f, p_x, p_y);
+		saxpy<<<(N + 255)/256, 256>>>(N, a_val, p_x, p_y);
 
 		/* Wait for the Device to finish */
 		err = cudaDeviceSynchronize();
@@ -551,7 +571,7 @@ int main(int argc, char *argv[])
 		/* 8< Profile Host Compute time */
 		profile_record_start(PROF_TASK_HOST_COMPUTE, profiling_enabled);
 
-		saxpy_host(N, 2.0f, p_x, p_y);
+		saxpy_host(N, a_val, p_x, p_y);
 
 		/* Profile Host Compute time >8 */
 		profile_record_stop(PROF_TASK_HOST_COMPUTE, profiling_enabled);
@@ -585,8 +605,9 @@ int main(int argc, char *argv[])
 	profile_record_start(PROF_TASK_HOST_VERIFY, profiling_enabled);
 
 	/* Calculate errors and display the result */
+	result = (a_val * x_val) + y_val;
 	for (i = 0; i < N; i++)
-		maxError = max(maxError, abs(r[i] - 4.0f));
+		maxError = max(maxError, abs(r[i] - result));
 
 	/* Profile Host Verification time >8 */
 	profile_record_stop(PROF_TASK_HOST_VERIFY, profiling_enabled);
