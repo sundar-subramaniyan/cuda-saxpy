@@ -40,6 +40,16 @@
 #define SUMMARY_NUM_TABS 7
 
 /**
+ * @brief Number of Grids (Thread Blocks)
+ */
+#define GRID_COUNT 256
+
+/**
+ * @brief Number of Threads per Block
+ */
+#define THREAD_COUNT 256
+
+/**
  * @brief Profile Task type
  *
  * @param PROF_TASK_SETUP		Setup time
@@ -285,7 +295,7 @@ void saxpy(unsigned int n, float a, float *x, float *y)
 	unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if (i < n)
-		y[i] = (a * x[i]) + y[i];
+		y[i] += (a * x[i]);
 }
 
 /**
@@ -329,6 +339,7 @@ int main(int argc, char *argv[])
 	int host_compute_mode = false;
 	int c, option_index = 0;
 	unsigned int dev_flags, host_flags;
+	int grid_count = GRID_COUNT, thread_count = THREAD_COUNT;
 	float a_val = 2.0f, x_val = 1.0f, y_val = 2.0f, result;
 	float *x, *y, *r, *d_x = NULL, *d_y = NULL, *p_x, *p_y;
 	float maxError = 0.0f;
@@ -348,10 +359,12 @@ int main(int argc, char *argv[])
 			{ "x", required_argument, 0, 'x' },
 			{ "y", required_argument, 0, 'y' },
 			{ "vector-size", required_argument, 0, 's' },
+			{ "grid-count", required_argument, 0, 'g' },
+			{ "thread-count", required_argument, 0, 't' },
 			{ "help", no_argument, 0, 'h' },
 		};
 
-		c = getopt_long(argc, argv, "axyhs:", long_options, &option_index);
+		c = getopt_long(argc, argv, "axyhsgt:", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -376,13 +389,20 @@ int main(int argc, char *argv[])
 		case 's':
 			N = (unsigned int)strtoul(optarg, NULL, 10);
 			break;
+		case 'g':
+			grid_count = atoi(optarg);
+			break;
+		case 't':
+			thread_count = atoi(optarg);
+			break;
 		case 'h':
 			/* fallthrough */
 		default:
-			printf("Usage: %s [--no-cuda-memcpy] [--no-host-map] "		\
-					"[--no-profiling] [--host-compute-mode] "	\
-					"[--a <value>] [--x <value>] " 	\
-					"[--y <value>] [--vector-size <size>]\n",
+			printf("Usage:\n\t%s [--no-cuda-memcpy] [--no-host-map] "		\
+					"[--no-profiling] [--host-compute-mode] "		\
+					"[--a <value>] [--x <value>] [--y <value>]\n"		\
+					"\t[--vector-size <size>] [--grid-count <value>]"	\
+					"[--thread-count <value>]\n",
 					argv[0]);
 			exit(0);
 			break;
@@ -439,6 +459,8 @@ int main(int argc, char *argv[])
 	printf("\tA value\t\t\t\t\t\t[%g]\n", a_val);
 	printf("\tX value\t\t\t\t\t\t[%g]\n", x_val);
 	printf("\tY value\t\t\t\t\t\t[%g]\n", y_val);
+	printf("\tGrid Count\t\t\t\t\t[%d]\n", grid_count);
+	printf("\tThread Count\t\t\t\t\t[%d]\n", thread_count);
 	printf("\tVector Size\t\t\t\t\t[%u]\n\n", N);
 
 	/* Setup Host allocation flags */
@@ -548,11 +570,16 @@ int main(int argc, char *argv[])
 	}
 
 	if (!host_compute_mode) {
+		int M, T;
+
 		/* 8< Profile Device Compute time */
 		profile_record_start(PROF_TASK_DEVICE_COMPUTE, profiling_enabled);
 
+		M = (N + grid_count - 1)/grid_count;
+		T = thread_count;
+
 		/* Perform SAXPY on the vectors present in the respective memory */
-		saxpy<<<(N + 255)/256, 256>>>(N, a_val, p_x, p_y);
+		saxpy<<<M, T>>>(N, a_val, p_x, p_y);
 
 		/* Wait for the Device to finish */
 		err = cudaDeviceSynchronize();
