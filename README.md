@@ -25,7 +25,9 @@ CLEAN html
 **Usage:**
 ```
 $ saxpy --help
-Usage: saxpy [--no-cuda-memcpy] [--no-host-map] [--no-profiling] [--host-compute-mode] [--a <value>] [--x <value>] [--y <value>] [--vector-size <size>]
+Usage:
+	saxpy [--no-cuda-memcpy] [--no-host-map] [--no-profiling] [--host-compute-mode] [--a <value>] [--x <value>] [--y <value>]
+	[--vector-size <size>] [--grid-count <value>][--thread-count <value>]
 ```
 
 **Example:**
@@ -47,19 +49,21 @@ Compute options:
 	A value						[2]
 	X value						[1]
 	Y value						[2]
+	Grid Count					[256]
+	Thread Count					[256]
 	Vector Size					[1073741824]
 
 Compute summary:
 	Max error:					[0.000000]
 
 Profiling results:
-	Host Setup time:				[0.016196367 seconds]
-	Host Alloc time:				[4.024780518 seconds]
-	Host Free time:					[1.025804307 seconds]
-	Host Init time:					[0.483573437 seconds]
-	Host Verify time:				[0.763202876 seconds]
-	Device Alloc time:				[0.000254980 seconds]
-	Device Free time:				[0.003375982 seconds]
-	Device Memcpy time:				[0.359966050 seconds]
-	Device Compute time:				[0.013518742 seconds]
+	Host Setup time:				[0.016225946 seconds]
+	Host Alloc time:				[2.338147570 seconds]
+	Host Free time:					[0.978175473 seconds]
+	Host Init time:					[0.484248015 seconds]
+	Host Verify time:				[0.771969269 seconds]
+	Device Alloc time:				[0.000239118 seconds]
+	Device Free time:				[0.003376936 seconds]
+	Device Memcpy time:				[0.360199580 seconds]
+	Device Compute time:				[0.013518014 seconds]
 ```
