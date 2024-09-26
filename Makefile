@@ -1,5 +1,6 @@
 CC := nvcc
 CFLAGS += "-O3"
+LDFLAGS := "-lcuda"
 OBJS := saxpy.o
 EXEC := saxpy
 DOXYGEN_DIR := html
@@ -25,7 +26,7 @@ nvcc_check:
 $(EXEC): $(OBJS)
 	@echo "LD $<"
 	@echo "EXEC $(EXEC)"
-	@$(CC) $(OBJS) -o $(EXEC)
+	@$(CC) $(OBJS) $(LDFLAGS) -o $(EXEC)
 
 %.o: %.cu
 	@echo "CC $<"

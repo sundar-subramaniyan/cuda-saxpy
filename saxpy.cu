@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <time.h>
+#include <cuda.h>
 
 /**
  * @brief Default size of the vectors
@@ -281,6 +282,51 @@ profile_record_summarize_all(int prof_enable)
 }
 
 /**
+ * @brief Print summary of the CUDA device
+ *
+ * @param[in] device_id	CUDA Device ID
+ */
+void print_device_summary(int device_id)
+{
+	cudaDeviceProp prop;
+	cudaError_t err;
+
+	memset(&prop, 0, sizeof(prop));
+
+	/* Get CUDA Device Poperties */
+	err = cudaGetDeviceProperties(&prop, device_id);
+	if (err != cudaSuccess) {
+		printf("Error getting CUDA device properties: %s\n", cudaGetErrorString(err));
+		return;
+	}
+
+	printf("CUDA Device Summary:\n");
+	printf("\tDevice ID\t\t\t\t\t[%d]\n", device_id);
+	printf("\tDevice Name\t\t\t\t\t[%s]\n", prop.name);
+	printf("\tTotal Global Memory\t\t\t\t[%lu MBytes]\n", prop.totalGlobalMem >> 20);
+	printf("\tTotal Constant Memory\t\t\t\t[%lu Bytes]\n", prop.totalConstMem);
+	printf("\tShared Memory Per Block\t\t\t\t[%lu Bytes]\n", prop.sharedMemPerBlock);
+	printf("\tL2 Cache Size\t\t\t\t\t[%d MBytes]\n", prop.l2CacheSize >> 20);
+	printf("\tRegisters Per Block\t\t\t\t[%d]\n", prop.regsPerBlock);
+	printf("\tWarp Size\t\t\t\t\t[%d]\n", prop.warpSize);
+	printf("\tMax Threads Per Block\t\t\t\t[%d]\n", prop.maxThreadsPerBlock);
+	printf("\tClock Rate\t\t\t\t\t[%d MHz]\n", prop.clockRate / 1000);
+	printf("\tMemory Clock Rate\t\t\t\t[%d MHz]\n", prop.memoryClockRate / 1000);
+	printf("\tMemory Bus Width\t\t\t\t[%d Bits]\n", prop.memoryBusWidth);
+	printf("\tMulti Processor Count\t\t\t\t[%d]\n", prop.multiProcessorCount);
+	printf("\tMax Threads Per Multiprocessor\t\t\t[%d]\n", prop.maxThreadsPerMultiProcessor);
+	printf("\tDevice Overlap\t\t\t\t\t[%s]\n", prop.deviceOverlap ? "Yes" : "No");
+	printf("\tAsynchronous Engine\t\t\t\t[%s]\n", (prop.asyncEngineCount == 0) ? "No" :
+			(prop.asyncEngineCount == 1) ? "Single" : "Dual");
+	printf("\tConcurrent Kernels\t\t\t\t[%s]\n", prop.concurrentKernels ? "Yes" : "No");
+	printf("\tMap Host Memory\t\t\t\t\t[%s]\n", prop.canMapHostMemory ? "Yes" : "No");
+	printf("\tIPC Event Supported\t\t\t\t[%s]\n", prop.ipcEventSupported ? "Yes" : "No");
+	printf("\tUnified Addressing\t\t\t\t[%s]\n", prop.unifiedAddressing ? "Yes" : "No");
+	printf("\tGPU Type\t\t\t\t\t[%s]\n", (prop.integrated == 1) ? "Integrated" : "Discrete");
+	printf("\n");
+}
+
+/**
  * @brief The kernel function that performs the parallel compute operation
  *	  in the GPU
  *
@@ -332,6 +378,7 @@ void saxpy_host(unsigned int n, float a, float *x, float *y)
 int main(int argc, char *argv[])
 {
 	int ret = 0;
+	int device_count = 0, device_id = 0;
 	unsigned int i, N = TEST_VECTOR_SIZE;
 	int cuda_memcpy_enabled = true;
 	int host_map_enabled = true;
@@ -417,6 +464,28 @@ int main(int argc, char *argv[])
 	/* 8< Profile Setup time */
 	profile_record_start(PROF_TASK_SETUP, profiling_enabled);
 
+	/* Check if CUDA capable devices are present */
+	err = cudaGetDeviceCount(&device_count);
+	if (err != cudaSuccess) {
+		printf("Error getting CUDA device count (%d). Exiting.\n", err);
+		goto err_no_cuda_dev;
+	}
+
+	if (!device_count) {
+		printf("No CUDA capable devices present. Exiting.\n");
+		goto err_no_cuda_dev;
+	}
+
+	/* Get Current CUDA device */
+	err = cudaGetDevice(&device_id);
+	if (err != cudaSuccess) {
+		printf("Error getting CUDA device: %s\n", cudaGetErrorString(err));
+		goto err_no_cuda_dev;
+	}
+
+	/* Print CUDA device summary */
+	print_device_summary(device_id);
+
 	/* Get the CUDA Device flags */
 	err = cudaGetDeviceFlags(&dev_flags);
 	if (err != cudaSuccess) {
@@ -425,37 +494,23 @@ int main(int argc, char *argv[])
 		goto err_flags;
 	}
 
+	/* Limit the Device flags */
+	dev_flags &= cudaDeviceMask;
+
 	/* Profile Setup time >8 */
 	profile_record_stop(PROF_TASK_SETUP, profiling_enabled);
-
-	/* Interrogate the Device flags and summarize the available support */
-	dev_flags &= cudaDeviceMask;
-	printf("CUDA Device Support Summary:\n");
-	printf("\tMapped pinned allocations\t\t\t[%s]\n",
-			(dev_flags & cudaDeviceMapHost) ? "Yes" : " No");
-	printf("\tAutomatic Scheduling\t\t\t\t[%s]\n",
-			(dev_flags & cudaDeviceScheduleAuto) ? "Yes" : " No");
-	printf("\tUse blocking synchronization\t\t\t[%s]\n",
-			(dev_flags & cudaDeviceScheduleBlockingSync) ? "Yes" : " No");
-	printf("\tSpin default scheduling\t\t\t\t[%s]\n",
-			(dev_flags & cudaDeviceScheduleSpin) ? "Yes" : " No");
-	printf("\tYield default scheduling\t\t\t[%s]\n",
-			(dev_flags & cudaDeviceScheduleYield) ? "Yes" : " No");
-	printf("\tKeep local memory allocation after launch\t[%s]\n",
-			(dev_flags & cudaDeviceLmemResizeToMax) ? "Yes" : " No");
-	printf("\n");
 
 	/* Show the compute options */
 	printf("Compute options:\n");
 	printf("\tCUDA Memcpy\t\t\t\t\t[%s]\n",
-			cuda_memcpy_enabled ? " Enabled" : "Disabled");
+			cuda_memcpy_enabled ? "Enabled" : "Disabled");
 	printf("\tHost Map\t\t\t\t\t[%s]\n",
 			((dev_flags & cudaDeviceMapHost)
-			 && host_map_enabled) ? " Enabled" : "Disabled");
+			 && host_map_enabled) ? "Enabled" : "Disabled");
 	printf("\tProfiling Enabled\t\t\t\t[%s]\n",
-			profiling_enabled ? " Enabled" : "Disabled");
+			profiling_enabled ? "Enabled" : "Disabled");
 	printf("\tHost Compute Mode\t\t\t\t[%s]\n",
-			host_compute_mode ? " Enabled" : "Disabled");
+			host_compute_mode ? "Enabled" : "Disabled");
 	printf("\tA value\t\t\t\t\t\t[%g]\n", a_val);
 	printf("\tX value\t\t\t\t\t\t[%g]\n", x_val);
 	printf("\tY value\t\t\t\t\t\t[%g]\n", y_val);
@@ -678,5 +733,6 @@ err_flags:
 		profile_record_summarize_all(profiling_enabled);
 	}
 
+err_no_cuda_dev:
 	return ret;
 }
